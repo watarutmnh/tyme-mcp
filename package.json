@@ -1,0 +1,36 @@
+{
+  "name": "tyme-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for Tyme — control the macOS time tracking app through AI assistants",
+  "module": "src/index.ts",
+  "type": "module",
+  "license": "MIT",
+  "author": "cdgrph",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cdgrph/tyme-mcp.git"
+  },
+  "keywords": [
+    "mcp",
+    "tyme",
+    "time-tracking",
+    "macos",
+    "applescript",
+    "jxa",
+    "model-context-protocol"
+  ],
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "dev": "bun --watch run src/index.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.28.0",
+    "zod": "^4.3.6"
+  }
+}
