@@ -5,10 +5,10 @@
   "module": "src/index.ts",
   "type": "module",
   "license": "MIT",
-  "author": "cdgrph",
+  "author": "watarutmnh",
   "repository": {
     "type": "git",
-    "url": "https://github.com/cdgrph/tyme-mcp.git"
+    "url": "https://github.com/watarutmnh/tyme-mcp.git"
   },
   "keywords": [
     "mcp",
