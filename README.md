@@ -25,26 +25,22 @@ An MCP (Model Context Protocol) server that connects AI assistants to [Tyme](htt
 curl -fsSL https://bun.sh/install | bash
 ```
 
-### 2. Clone and install
-
-```bash
-git clone https://github.com/cdgrph/tyme-mcp.git
-cd tyme-mcp
-bun install
-```
-
-### 3. Configure your MCP client
+### 2. Configure your MCP client
 
 #### Claude Code
 
-Add to your project's `.mcp.json`:
+```bash
+claude mcp add tyme -- bunx tyme-mcp
+```
+
+Or add to your `.mcp.json`:
 
 ```json
 {
   "mcpServers": {
     "tyme": {
-      "command": "bun",
-      "args": ["run", "/path/to/tyme-mcp/src/index.ts"]
+      "command": "bunx",
+      "args": ["tyme-mcp"]
     }
   }
 }
@@ -58,14 +54,12 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 {
   "mcpServers": {
     "tyme": {
-      "command": "bun",
-      "args": ["run", "/path/to/tyme-mcp/src/index.ts"]
+      "command": "bunx",
+      "args": ["tyme-mcp"]
     }
   }
 }
 ```
-
-Replace `/path/to/tyme-mcp` with the actual path where you cloned the repository.
 
 ### 4. Launch Tyme
 

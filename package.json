@@ -4,6 +4,12 @@
   "description": "MCP server for Tyme — control the macOS time tracking app through AI assistants",
   "module": "src/index.ts",
   "type": "module",
+  "bin": {
+    "tyme-mcp": "src/index.ts"
+  },
+  "files": [
+    "src/"
+  ],
   "license": "MIT",
   "author": "watarutmnh",
   "repository": {
