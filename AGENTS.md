@@ -16,8 +16,7 @@ MCP server connecting AI assistants to [Tyme](https://www.tyme-app.com/) (macOS 
 ```
 src/
   index.ts          — Server bootstrap, tool registration
-  applescript.ts    — execAppleScript(), execJXA(), sanitize()
-  types.ts          — TypeScript interfaces for Tyme entities
+  applescript.ts    — execAppleScript(), execJXA(), sanitize(), formatSuccess(), formatError()
   tools/
     timer.ts        — start_timer, stop_timer, get_running_timers
     categories.ts   — list_categories
@@ -50,6 +49,22 @@ All user inputs MUST pass through `sanitize()` before interpolation into scripts
 - **Write** (update): JXA → handles dates via `new Date()`
 - **Write** (delete): AppleScript → iterate and delete
 
+### JXA Object Creation
+
+Do NOT use `push()` for creating Tyme objects — the returned array index is unreliable for retrieving the new object's ID. Use AppleScript `make new` which returns a reference string containing the ID:
+
+```
+task id <UUID> of project id <UUID>
+```
+
+Parse the ID with regex: `ref.match(/task id ([^\s]+)/)`
+
+Exception: `create_record` uses JXA `app.make()` because AppleScript cannot parse ISO 8601 dates.
+
+### MCP Tool Helpers
+
+All tool handlers use `formatSuccess()` and `formatError()` from `applescript.ts` to avoid boilerplate. Do not manually construct `{ content: [{ type: "text", text }] }` objects.
+
 ## Commands
 
 ```bash
@@ -63,3 +78,11 @@ bun run dev          # Start with watch mode
 - Commit messages: English, [Conventional Commits](https://www.conventionalcommits.org/)
 - Branch naming: `feature/*`, `fix/*`, `docs/*`, `chore/*`
 - No direct commits to `main`
+
+## Publishing
+
+Published to npm as `tyme-mcp`. Users install via `bunx tyme-mcp`.
+
+- `bin` field in `package.json` points to `src/index.ts` (with `#!/usr/bin/env bun` shebang)
+- `files` field limits published contents to `src/`
+- Bump `version` in `package.json` before `npm publish --access public`
