@@ -120,18 +120,32 @@ JSON.stringify({ total: ids.length, returned: records.length, records: records }
       note: z.string().optional().describe("Note for the record"),
     },
     async (params) => {
-      // Use JXA to create record with proper date handling, then immediately read its reference
-      const script = `
-const app = Application("Tyme");
-const tsk = app.gettaskwithid("${sanitize(params.taskId)}");
-const start = new Date("${sanitize(params.timeStart)}");
-const end = new Date("${sanitize(params.timeEnd)}");
-const rec = app.make({new: "taskRecord", at: tsk.taskRecords, withProperties: {timestart: start, timeend: end${params.note !== undefined ? `, note: "${sanitize(params.note)}"` : ""}}});
-JSON.stringify({ id: rec.id() });
-`;
+      // Step 1: AppleScript make new taskRecord (without dates — JXA make can't handle Date objects)
+      const props = params.note !== undefined
+        ? `with properties {note:"${sanitize(params.note)}"}`
+        : "";
+      const createScript = `tell application "Tyme"
+  set tsk to first task whose id is "${sanitize(params.taskId)}"
+  set newRec to (make new taskRecord at end of taskRecords of tsk ${props})
+end tell`;
+
       try {
-        const result = await execJXA(script);
-        return formatSuccess(result);
+        const ref = await execAppleScript(createScript);
+        // Parse ID from "task record id <UUID> of task id <UUID> of project id <UUID>"
+        const match = ref.match(/task record id ([^\s]+)/);
+        const newId = match ? match[1] : ref;
+
+        // Step 2: JXA to set dates (same pattern as update_record)
+        const dateScript = `
+const app = Application("Tyme");
+app.getrecordwithid("${sanitize(newId)}");
+const rec = app.lastfetchedtaskrecord;
+rec.timestart = new Date("${sanitize(params.timeStart)}");
+rec.timeend = new Date("${sanitize(params.timeEnd)}");
+JSON.stringify({ id: "${sanitize(newId)}" });
+`;
+        await execJXA(dateScript);
+        return formatSuccess(JSON.stringify({ id: newId }));
       } catch (error) {
         return formatError(error);
       }
