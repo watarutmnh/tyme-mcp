@@ -1,6 +1,6 @@
 {
   "name": "tyme-mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "MCP server for Tyme — control the macOS time tracking app through AI assistants",
   "module": "src/index.ts",
   "type": "module",
