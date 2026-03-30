@@ -59,7 +59,7 @@ task id <UUID> of project id <UUID>
 
 Parse the ID with regex: `ref.match(/task id ([^\s]+)/)`
 
-Exception: `create_record` uses JXA `app.make()` because AppleScript cannot parse ISO 8601 dates.
+`create_record` uses a two-step pattern: AppleScript `make new` (to create the record and get its ID) + JXA (to set dates via property assignment). JXA `app.make()` cannot pass `Date` objects in `withProperties` (-1700 error).
 
 ### MCP Tool Helpers
 

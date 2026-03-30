@@ -120,18 +120,41 @@ JSON.stringify({ total: ids.length, returned: records.length, records: records }
       note: z.string().optional().describe("Note for the record"),
     },
     async (params) => {
-      // Use JXA to create record with proper date handling, then immediately read its reference
-      const script = `
-const app = Application("Tyme");
-const tsk = app.gettaskwithid("${sanitize(params.taskId)}");
-const start = new Date("${sanitize(params.timeStart)}");
-const end = new Date("${sanitize(params.timeEnd)}");
-const rec = app.make({new: "taskRecord", at: tsk.taskRecords, withProperties: {timestart: start, timeend: end${params.note !== undefined ? `, note: "${sanitize(params.note)}"` : ""}}});
-JSON.stringify({ id: rec.id() });
-`;
+      // Step 1: AppleScript make new taskRecord (without dates — JXA make can't handle Date objects)
+      // Must iterate projects/tasks because AppleScript can't find tasks by ID at top level
+      const props = params.note !== undefined
+        ? `with properties {note:"${sanitize(params.note)}"}`
+        : "";
+      const createScript = `tell application "Tyme"
+  repeat with proj in projects
+    repeat with tsk in tasks of proj
+      if id of tsk is "${sanitize(params.taskId)}" then
+        return (make new taskRecord at end of taskRecords of tsk ${props})
+      end if
+    end repeat
+  end repeat
+  error "Task not found"
+end tell`;
+
       try {
-        const result = await execJXA(script);
-        return formatSuccess(result);
+        const ref = await execAppleScript(createScript, RECORD_TIMEOUT);
+        // Parse ID from "taskRecord id <UUID> of task id <UUID> of project id <UUID>"
+        const match = ref.match(/taskRecord id ([^\s]+)/);
+        if (!match) {
+          throw new Error(`Failed to parse record ID from: ${ref}`);
+        }
+        const newId = match[1];
+
+        // Step 2: JXA to set dates (same pattern as update_record)
+        const dateScript = `
+const app = Application("Tyme");
+app.getrecordwithid("${sanitize(newId)}");
+const rec = app.lastfetchedtaskrecord;
+rec.timestart = new Date("${sanitize(params.timeStart)}");
+rec.timeend = new Date("${sanitize(params.timeEnd)}");
+`;
+        await execJXA(dateScript, RECORD_TIMEOUT);
+        return formatSuccess(JSON.stringify({ id: newId }));
       } catch (error) {
         return formatError(error);
       }
