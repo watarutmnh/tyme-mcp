@@ -208,23 +208,18 @@ JSON.stringify({ updated: true });
       recordId: z.string().describe("Record ID to delete"),
     },
     async ({ recordId }) => {
-      // Find and delete via iteration (records don't have a direct delete-by-ID)
       const script = `tell application "Tyme"
   repeat with proj in projects
     repeat with tsk in tasks of proj
-      repeat with rec in taskRecords of tsk
-        if id of rec is "${sanitize(recordId)}" then
-          delete rec
-          return "ok"
-        end if
-      end repeat
+      try
+        delete (first taskRecord of tsk whose id is "${sanitize(recordId)}")
+        return "ok"
+      end try
       repeat with sub in subtasks of tsk
-        repeat with rec in taskRecords of sub
-          if id of rec is "${sanitize(recordId)}" then
-            delete rec
-            return "ok"
-          end if
-        end repeat
+        try
+          delete (first taskRecord of sub whose id is "${sanitize(recordId)}")
+          return "ok"
+        end try
       end repeat
     end repeat
   end repeat
