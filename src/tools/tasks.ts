@@ -2,6 +2,8 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { execAppleScript, execJXA, sanitize, formatSuccess, formatError } from "../applescript.ts";
 
+const DELETE_TIMEOUT = 30_000;
+
 export function registerTaskTools(server: McpServer) {
   server.tool(
     "list_tasks",
@@ -178,17 +180,20 @@ JSON.stringify({ updated: true });
       taskId: z.string().describe("Task ID to delete"),
     },
     async ({ taskId }) => {
+      const safeId = sanitize(taskId);
       const script = `tell application "Tyme"
   repeat with proj in projects
-    if (count of (tasks of proj whose id is "${sanitize(taskId)}")) > 0 then
-      delete (first task of proj whose id is "${sanitize(taskId)}")
+    -- count check needed: Tyme's whose silently succeeds on non-matching IDs
+    set found to (tasks of proj whose id is "${safeId}")
+    if (count of found) > 0 then
+      delete (first item of found)
       return "ok"
     end if
   end repeat
   return "not found"
 end tell`;
       try {
-        const result = await execAppleScript(script);
+        const result = await execAppleScript(script, DELETE_TIMEOUT);
         if (result === "not found") {
           return formatError(`Task ${taskId} not found`);
         }

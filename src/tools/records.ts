@@ -208,16 +208,20 @@ JSON.stringify({ updated: true });
       recordId: z.string().describe("Record ID to delete"),
     },
     async ({ recordId }) => {
+      const safeId = sanitize(recordId);
       const script = `tell application "Tyme"
   repeat with proj in projects
     repeat with tsk in tasks of proj
-      if (count of (taskRecords of tsk whose id is "${sanitize(recordId)}")) > 0 then
-        delete (first taskRecord of tsk whose id is "${sanitize(recordId)}")
+      -- count check needed: Tyme's whose silently succeeds on non-matching IDs
+      set found to (taskRecords of tsk whose id is "${safeId}")
+      if (count of found) > 0 then
+        delete (first item of found)
         return "ok"
       end if
       repeat with sub in subtasks of tsk
-        if (count of (taskRecords of sub whose id is "${sanitize(recordId)}")) > 0 then
-          delete (first taskRecord of sub whose id is "${sanitize(recordId)}")
+        set foundSub to (taskRecords of sub whose id is "${safeId}")
+        if (count of foundSub) > 0 then
+          delete (first item of foundSub)
           return "ok"
         end if
       end repeat
