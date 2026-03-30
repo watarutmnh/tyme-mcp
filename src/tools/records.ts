@@ -121,18 +121,25 @@ JSON.stringify({ total: ids.length, returned: records.length, records: records }
     },
     async (params) => {
       // Step 1: AppleScript make new taskRecord (without dates — JXA make can't handle Date objects)
+      // Must iterate projects/tasks because AppleScript can't find tasks by ID at top level
       const props = params.note !== undefined
         ? `with properties {note:"${sanitize(params.note)}"}`
         : "";
       const createScript = `tell application "Tyme"
-  set tsk to first task whose id is "${sanitize(params.taskId)}"
-  set newRec to (make new taskRecord at end of taskRecords of tsk ${props})
+  repeat with proj in projects
+    repeat with tsk in tasks of proj
+      if id of tsk is "${sanitize(params.taskId)}" then
+        return (make new taskRecord at end of taskRecords of tsk ${props})
+      end if
+    end repeat
+  end repeat
+  error "Task not found"
 end tell`;
 
       try {
         const ref = await execAppleScript(createScript);
         // Parse ID from "task record id <UUID> of task id <UUID> of project id <UUID>"
-        const match = ref.match(/task record id ([^\s]+)/);
+        const match = ref.match(/taskRecord id ([^\s]+)/);
         const newId = match ? match[1] : ref;
 
         // Step 2: JXA to set dates (same pattern as update_record)
