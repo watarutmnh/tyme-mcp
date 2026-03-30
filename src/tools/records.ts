@@ -137,10 +137,13 @@ JSON.stringify({ total: ids.length, returned: records.length, records: records }
 end tell`;
 
       try {
-        const ref = await execAppleScript(createScript);
-        // Parse ID from "task record id <UUID> of task id <UUID> of project id <UUID>"
+        const ref = await execAppleScript(createScript, RECORD_TIMEOUT);
+        // Parse ID from "taskRecord id <UUID> of task id <UUID> of project id <UUID>"
         const match = ref.match(/taskRecord id ([^\s]+)/);
-        const newId = match ? match[1] : ref;
+        if (!match) {
+          throw new Error(`Failed to parse record ID from: ${ref}`);
+        }
+        const newId = match[1];
 
         // Step 2: JXA to set dates (same pattern as update_record)
         const dateScript = `
@@ -149,9 +152,8 @@ app.getrecordwithid("${sanitize(newId)}");
 const rec = app.lastfetchedtaskrecord;
 rec.timestart = new Date("${sanitize(params.timeStart)}");
 rec.timeend = new Date("${sanitize(params.timeEnd)}");
-JSON.stringify({ id: "${sanitize(newId)}" });
 `;
-        await execJXA(dateScript);
+        await execJXA(dateScript, RECORD_TIMEOUT);
         return formatSuccess(JSON.stringify({ id: newId }));
       } catch (error) {
         return formatError(error);
