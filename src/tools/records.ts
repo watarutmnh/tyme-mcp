@@ -211,15 +211,15 @@ JSON.stringify({ updated: true });
       const script = `tell application "Tyme"
   repeat with proj in projects
     repeat with tsk in tasks of proj
-      try
+      if (count of (taskRecords of tsk whose id is "${sanitize(recordId)}")) > 0 then
         delete (first taskRecord of tsk whose id is "${sanitize(recordId)}")
         return "ok"
-      end try
+      end if
       repeat with sub in subtasks of tsk
-        try
+        if (count of (taskRecords of sub whose id is "${sanitize(recordId)}")) > 0 then
           delete (first taskRecord of sub whose id is "${sanitize(recordId)}")
           return "ok"
-        end try
+        end if
       end repeat
     end repeat
   end repeat

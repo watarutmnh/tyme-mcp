@@ -180,10 +180,10 @@ JSON.stringify({ updated: true });
     async ({ taskId }) => {
       const script = `tell application "Tyme"
   repeat with proj in projects
-    try
+    if (count of (tasks of proj whose id is "${sanitize(taskId)}")) > 0 then
       delete (first task of proj whose id is "${sanitize(taskId)}")
       return "ok"
-    end try
+    end if
   end repeat
   return "not found"
 end tell`;
