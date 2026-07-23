@@ -44,6 +44,47 @@ JSON.stringify(result);
   );
 
   server.registerTool(
+    "get_project_detail",
+    {
+      description: "Get detailed information about a specific project",
+      inputSchema: {
+        projectId: z.string().describe("Project ID"),
+      },
+      annotations: {
+        readOnlyHint: true,
+        openWorldHint: false,
+      },
+    },
+    async ({ projectId }) => {
+      const safeId = sanitize(projectId);
+      const script = `
+const app = Application("Tyme");
+const proj = app.projects().find(p => p.id() === "${safeId}");
+if (!proj) throw new Error("Project not found: ${safeId}");
+JSON.stringify({
+  id: proj.id(),
+  name: proj.name(),
+  completed: proj.completed(),
+  completedDate: proj.completeddate() ? proj.completeddate().toISOString() : null,
+  dueDate: proj.duedate() ? proj.duedate().toISOString() : null,
+  categoryId: proj.categoryid(),
+  defaultHourlyRate: proj.defaulthourlyrate(),
+  plannedBudget: proj.plannedbudget(),
+  plannedDuration: proj.plannedduration(),
+  roundingMethod: proj.roundingmethod(),
+  roundingMinutes: proj.roundingminutes(),
+});
+`;
+      try {
+        const result = await execJXA(script);
+        return formatSuccess(result);
+      } catch (error) {
+        return formatError(error);
+      }
+    },
+  );
+
+  server.registerTool(
     "create_project",
     {
       description: "Create a new project in Tyme",
@@ -117,10 +158,13 @@ proj.duedate = new Date("${dueDate.toISOString()}");
         projectId: z.string().describe("Project ID to update"),
         name: z.string().optional().describe("New project name"),
         completed: z.boolean().optional().describe("Mark as completed"),
+        categoryId: z.string().optional().describe("New category ID"),
         hourlyRate: z.number().finite().optional().describe("New hourly rate"),
         dueDate: z.string().optional().describe("New due date (ISO 8601)"),
         plannedBudget: z.number().finite().optional().describe("New planned budget"),
         plannedDuration: z.number().finite().optional().describe("New planned duration in seconds"),
+        roundingMethod: z.number().finite().min(0).max(2).optional().describe("0=down, 1=nearest, 2=up"),
+        roundingMinutes: z.number().finite().optional().describe("New rounding minutes"),
       },
       annotations: {
         destructiveHint: false,
@@ -134,6 +178,7 @@ proj.duedate = new Date("${dueDate.toISOString()}");
         const updates: string[] = [];
         if (params.name !== undefined) updates.push(`proj.name = "${sanitize(params.name)}";`);
         if (params.completed !== undefined) updates.push(`proj.completed = ${params.completed};`);
+        if (params.categoryId !== undefined) updates.push(`proj.categoryid = "${sanitize(params.categoryId)}";`);
         if (params.hourlyRate !== undefined) updates.push(`proj.defaulthourlyrate = ${params.hourlyRate};`);
         if (params.dueDate !== undefined) {
           const dueDate = parseDateInput(params.dueDate);
@@ -141,6 +186,8 @@ proj.duedate = new Date("${dueDate.toISOString()}");
         }
         if (params.plannedBudget !== undefined) updates.push(`proj.plannedbudget = ${params.plannedBudget};`);
         if (params.plannedDuration !== undefined) updates.push(`proj.plannedduration = ${params.plannedDuration};`);
+        if (params.roundingMethod !== undefined) updates.push(`proj.roundingmethod = ${params.roundingMethod};`);
+        if (params.roundingMinutes !== undefined) updates.push(`proj.roundingminutes = ${params.roundingMinutes};`);
 
         if (updates.length === 0) {
           return formatSuccess("No fields to update");

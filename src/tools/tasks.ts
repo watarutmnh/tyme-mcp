@@ -71,6 +71,7 @@ JSON.stringify({
   startDate: t.startdate() ? t.startdate().toISOString() : null,
   hourlyRate: t.timedhourlyrate(),
   plannedDuration: t.timedplannedduration(),
+  mileageKilometerRate: t.mileagekilometerrate(),
   roundingMethod: t.timedroundingmethod(),
   roundingMinutes: t.timedroundingminutes(),
   projectId: t.relatedprojectid(),
@@ -123,6 +124,7 @@ JSON.stringify({
         taskType: z.enum(["timed", "mileage", "fixed"]).optional().default("timed").describe("Task type (default: timed)"),
         hourlyRate: z.number().finite().optional().describe("Hourly rate"),
         plannedDuration: z.number().finite().optional().describe("Planned duration in seconds"),
+        mileageKilometerRate: z.number().finite().optional().describe("Mileage rate per kilometer (only effective for mileage-type tasks)"),
         dueDate: z.string().optional().describe("Due date (ISO 8601)"),
         roundingMethod: z.number().finite().min(0).max(2).optional().describe("0=down, 1=nearest, 2=up"),
         roundingMinutes: z.number().finite().optional().describe("Rounding minutes"),
@@ -144,6 +146,7 @@ JSON.stringify({
         if (params.taskType) props.push(`taskType:"${sanitize(params.taskType)}"`);
         if (params.hourlyRate !== undefined) props.push(`timedHourlyRate:${params.hourlyRate}`);
         if (params.plannedDuration !== undefined) props.push(`timedPlannedDuration:${params.plannedDuration}`);
+        if (params.mileageKilometerRate !== undefined) props.push(`mileageKilometerRate:${params.mileageKilometerRate}`);
         if (params.roundingMethod !== undefined) props.push(`timedRoundingMethod:${params.roundingMethod}`);
         if (params.roundingMinutes !== undefined) props.push(`timedRoundingMinutes:${params.roundingMinutes}`);
 
@@ -189,6 +192,7 @@ t.duedate = new Date("${dueDate.toISOString()}");
         completed: z.boolean().optional().describe("Mark as completed"),
         hourlyRate: z.number().finite().optional().describe("New hourly rate"),
         plannedDuration: z.number().finite().optional().describe("New planned duration in seconds"),
+        mileageKilometerRate: z.number().finite().optional().describe("New mileage rate per kilometer (only effective for mileage-type tasks)"),
         dueDate: z.string().optional().describe("New due date (ISO 8601)"),
       },
       annotations: {
@@ -205,6 +209,7 @@ t.duedate = new Date("${dueDate.toISOString()}");
         if (params.completed !== undefined) updates.push(`tsk.completed = ${params.completed};`);
         if (params.hourlyRate !== undefined) updates.push(`tsk.timedhourlyrate = ${params.hourlyRate};`);
         if (params.plannedDuration !== undefined) updates.push(`tsk.timedplannedduration = ${params.plannedDuration};`);
+        if (params.mileageKilometerRate !== undefined) updates.push(`tsk.mileagekilometerrate = ${params.mileageKilometerRate};`);
         if (params.dueDate !== undefined) {
           const dueDate = parseDateInput(params.dueDate);
           updates.push(`tsk.duedate = new Date("${dueDate.toISOString()}");`);

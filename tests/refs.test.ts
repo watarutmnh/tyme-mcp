@@ -32,6 +32,28 @@ test("task kind does not match the taskRecord ID prefix", () => {
   ).toBe("TASK-1");
 });
 
+test("extracts a subtask ID from a subtask-record reference", () => {
+  expect(
+    parseIdFromRef(
+      "taskRecord id RECORD-1 of subtask id SUB-1 of task id TASK-1 of project id PROJECT-1",
+      "subtask",
+    ),
+  ).toBe("SUB-1");
+});
+
+test("task kind does not match inside 'subtask id'", () => {
+  expect(
+    parseIdFromRef(
+      "taskRecord id RECORD-1 of subtask id SUB-1 of task id TASK-1 of project id PROJECT-1",
+      "task",
+    ),
+  ).toBe("TASK-1");
+});
+
+test("extracts a category ID from an AppleScript reference", () => {
+  expect(parseIdFromRef("category id CAT-1", "category")).toBe("CAT-1");
+});
+
 test("throws when the requested reference kind is absent", () => {
   expect(() => parseIdFromRef("project id PROJECT-1", "task")).toThrow(
     "Failed to parse task ID from: project id PROJECT-1",
