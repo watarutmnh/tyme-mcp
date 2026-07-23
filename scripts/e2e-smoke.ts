@@ -1,4 +1,4 @@
-// E2E smoke test for tyme-mcp — exercises all 22 MCP tools against the real
+// E2E smoke test for tyme-mcp — exercises all 29 MCP tools against the real
 // Tyme app through the actual tool handlers (InMemoryTransport).
 //
 // Requirements: macOS with Tyme running. Not suitable for CI.
@@ -68,6 +68,10 @@ console.log(`baseline running timers: ${JSON.stringify(baselineTimers)}`);
 let projectId = "";
 let taskId = "";
 let recordId = "";
+let categoryId = "";
+let subtaskId = "";
+let mileageTaskId = "";
+let mileageRecordId = "";
 
 try {
   // --- input validation ---
@@ -85,6 +89,31 @@ try {
   const selJson = sel.isError ? null : JSON.parse(sel.text);
   check("get_selected_object returns id/name", selJson !== null && "id" in selJson && "name" in selJson, sel.text);
 
+  // --- category lifecycle ---
+  const categoryName = `MCP-TEST-category-${Date.now()}`;
+  const cc = await call("create_category", { name: categoryName });
+  check("create_category ok", !cc.isError, cc.text);
+  categoryId = JSON.parse(cc.text).id;
+
+  const catsWithNew = await call("list_categories");
+  check("list_categories includes new category", JSON.parse(catsWithNew.text).some(
+    (c: { id: string }) => c.id === categoryId,
+  ), catsWithNew.text.slice(0, 200));
+
+  const uc = await call("update_category", { categoryId, name: `${categoryName}-renamed` });
+  check("update_category ok", !uc.isError, uc.text);
+  const catsAfterUpdate = await call("list_categories");
+  check("update_category renames category", JSON.parse(catsAfterUpdate.text).some(
+    (c: { id: string; name: string }) => c.id === categoryId && c.name === `${categoryName}-renamed`,
+  ), catsAfterUpdate.text.slice(0, 200));
+
+  const createdCategoryId = categoryId;
+  const dc = await call("delete_category", { categoryId: createdCategoryId });
+  check("delete_category ok", !dc.isError, dc.text);
+  if (!dc.isError) categoryId = "";
+  const dcAgain = await call("delete_category", { categoryId: createdCategoryId });
+  check("delete_category again → not found", dcAgain.isError && dcAgain.text.includes("not found"), dcAgain.text);
+
   // --- project lifecycle ---
   const cp = await call("create_project", { name: PROJECT_NAME, dueDate: "2026-08-01" });
   check("create_project ok", !cp.isError, cp.text);
@@ -93,10 +122,20 @@ try {
   const lp = await call("list_projects");
   check("list_projects includes new project", JSON.parse(lp.text).some((p: { id: string }) => p.id === projectId), lp.text.slice(0, 200));
 
-  const up = await call("update_project", { projectId, name: `${PROJECT_NAME}-renamed`, hourlyRate: 120 });
+  const up = await call("update_project", {
+    projectId,
+    name: `${PROJECT_NAME}-renamed`,
+    hourlyRate: 120,
+    roundingMethod: 1,
+  });
   check("update_project ok", !up.isError, up.text);
   const upBogus = await call("update_project", { projectId: BOGUS, name: "x" });
   check("update_project bogus → Project not found", upBogus.isError && upBogus.text.includes("Project not found"), upBogus.text);
+
+  const pd = await call("get_project_detail", { projectId });
+  const pdJson = JSON.parse(pd.text);
+  check("get_project_detail dueDate set", pdJson.dueDate === new Date(2026, 7, 1).toISOString(), `got ${pdJson.dueDate}`);
+  check("get_project_detail roundingMethod set", pdJson.roundingMethod === 1, `got ${pdJson.roundingMethod}`);
 
   // --- task lifecycle ---
   const ct = await call("create_task", { projectId, name: "smoke-task", dueDate: "2026-07-30" });
@@ -112,6 +151,38 @@ try {
 
   const ls = await call("list_subtasks", { taskId });
   check("list_subtasks returns array", !ls.isError && Array.isArray(JSON.parse(ls.text)), ls.text);
+
+  // --- subtask lifecycle ---
+  const cs = await call("create_subtask", {
+    taskId,
+    name: "smoke-subtask",
+    plannedDuration: 1800,
+  });
+  check("create_subtask ok", !cs.isError, cs.text);
+  subtaskId = JSON.parse(cs.text).id;
+
+  const lsWithNew = await call("list_subtasks", { taskId });
+  const listedSubtask = JSON.parse(lsWithNew.text).find((s: { id: string }) => s.id === subtaskId);
+  check("list_subtasks includes new subtask", !!listedSubtask, lsWithNew.text);
+  check("created subtask plannedDuration set", listedSubtask?.plannedDuration === 1800, JSON.stringify(listedSubtask));
+
+  const us = await call("update_subtask", {
+    taskId,
+    subtaskId,
+    name: "smoke-subtask-renamed",
+  });
+  check("update_subtask ok", !us.isError, us.text);
+  const lsAfterUpdate = await call("list_subtasks", { taskId });
+  check("update_subtask renames subtask", JSON.parse(lsAfterUpdate.text).some(
+    (s: { id: string; name: string }) => s.id === subtaskId && s.name === "smoke-subtask-renamed",
+  ), lsAfterUpdate.text);
+
+  const createdSubtaskId = subtaskId;
+  const ds = await call("delete_subtask", { subtaskId: createdSubtaskId });
+  check("delete_subtask ok", !ds.isError, ds.text);
+  if (!ds.isError) subtaskId = "";
+  const dsAgain = await call("delete_subtask", { subtaskId: createdSubtaskId });
+  check("delete_subtask again → not found", dsAgain.isError && dsAgain.text.includes("not found"), dsAgain.text);
 
   const ut = await call("update_task", { taskId, plannedDuration: 3600 });
   check("update_task ok", !ut.isError, ut.text);
@@ -173,6 +244,57 @@ try {
   const ur = await call("update_record", { recordId, note: "smoke-note-2", billed: true });
   check("update_record ok", !ur.isError, ur.text);
 
+  // --- mileage lifecycle ---
+  const mileageRate = 0.75;
+  const mileageDistance = 42.5;
+  const cmt = await call("create_task", {
+    projectId,
+    name: "smoke-mileage-task",
+    taskType: "mileage",
+    mileageKilometerRate: mileageRate,
+  });
+  check("create mileage task ok", !cmt.isError, cmt.text);
+  mileageTaskId = JSON.parse(cmt.text).id;
+
+  const mtd = await call("get_task_detail", { taskId: mileageTaskId });
+  check(
+    "get_task_detail mileageKilometerRate set",
+    JSON.parse(mtd.text).mileageKilometerRate === mileageRate,
+    mtd.text,
+  );
+
+  const cmr = await call("create_record", {
+    taskId: mileageTaskId,
+    timeStart: `${T.dateOnly}T10:00:00`,
+    timeEnd: `${T.dateOnly}T10:05:00`,
+    mileageDistance,
+  });
+  check("create mileage record ok", !cmr.isError, cmr.text);
+  mileageRecordId = JSON.parse(cmr.text).id;
+
+  const runningAfterMileageCreate = await call("get_running_timers");
+  const mileageTimerRunning = !runningAfterMileageCreate.isError && (
+    JSON.parse(runningAfterMileageCreate.text) as { taskId: string }[]
+  ).some((timer) => timer.taskId === mileageTaskId);
+  if (mileageTimerRunning) {
+    const stoppedMileageTimer = await call("stop_timer", { taskId: mileageTaskId });
+    check("defensively stop mileage timer", !stoppedMileageTimer.isError, stoppedMileageTimer.text);
+  }
+
+  const mrd = await call("get_record_detail", { recordId: mileageRecordId });
+  check(
+    "get_record_detail mileageTraveledDistance set",
+    JSON.parse(mrd.text).mileageTraveledDistance === mileageDistance,
+    mrd.text,
+  );
+
+  const dmr = await call("delete_record", { recordId: mileageRecordId });
+  check("delete mileage record ok", !dmr.isError, dmr.text);
+  if (!dmr.isError) mileageRecordId = "";
+  const dmt = await call("delete_task", { taskId: mileageTaskId });
+  check("delete mileage task ok", !dmt.isError, dmt.text);
+  if (!dmt.isError) mileageTaskId = "";
+
   // --- reports ---
   const daily = await call("get_daily_summary", { date: T.dateOnly });
   check("daily summary includes test project", JSON.parse(daily.text).entries.some(
@@ -208,11 +330,28 @@ try {
   failures++;
   console.error("UNCAUGHT FAILURE:", err);
 } finally {
+  if (mileageTaskId) {
+    const running = await call("get_running_timers");
+    if (!running.isError && (
+      JSON.parse(running.text) as { taskId: string }[]
+    ).some((timer) => timer.taskId === mileageTaskId)) {
+      await call("stop_timer", { taskId: mileageTaskId });
+    }
+  }
+  if (mileageRecordId) {
+    await call("delete_record", { recordId: mileageRecordId });
+  }
+  if (mileageTaskId) {
+    await call("delete_task", { taskId: mileageTaskId });
+  }
   if (recordId) {
     const dr = await call("delete_record", { recordId });
     check("delete_record ok", !dr.isError, dr.text);
     const drAgain = await call("delete_record", { recordId });
     check("delete_record again → not found", drAgain.isError, drAgain.text);
+  }
+  if (subtaskId) {
+    await call("delete_subtask", { subtaskId });
   }
   if (taskId) {
     const dt = await call("delete_task", { taskId });
@@ -224,6 +363,9 @@ try {
     const dp2 = await call("delete_project", { projectId });
     check("delete_project again → not found", dp2.isError && dp2.text.includes("not found"), dp2.text);
   }
+  if (categoryId) {
+    await call("delete_category", { categoryId });
+  }
 
   const finalTimers = JSON.parse(
     await execJXA(`const app=Application("Tyme");JSON.stringify(app.trackedtaskids());`),
@@ -234,6 +376,10 @@ try {
     `const app=Application("Tyme");JSON.stringify(app.projects().filter(p=>p.name().startsWith("MCP-TEST")).map(p=>p.id()));`,
   );
   check("no MCP-TEST leftovers", leftovers === "[]", leftovers);
+  const categoryLeftovers = await execJXA(
+    `const app=Application("Tyme");JSON.stringify(app.categories().filter(c=>c.name().startsWith("MCP-TEST")).map(c=>c.id()));`,
+  );
+  check("no MCP-TEST category leftovers", categoryLeftovers === "[]", categoryLeftovers);
 
   console.log(failures === 0 ? "ALL PASS" : `${failures} FAILURE(S)`);
   process.exit(failures === 0 ? 0 : 1);

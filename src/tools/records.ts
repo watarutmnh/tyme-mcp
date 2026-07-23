@@ -125,9 +125,11 @@ JSON.stringify({ total: ids.length, returned: records.length, records: records }
       description: "Create a new time record for a task",
       inputSchema: {
         taskId: z.string().describe("Task ID to add the record to"),
+        subtaskId: z.string().optional().describe("Subtask ID to add the record to; taskId must identify its parent task"),
         timeStart: z.string().describe("Start time (ISO 8601)"),
         timeEnd: z.string().describe("End time (ISO 8601)"),
         note: z.string().optional().describe("Note for the record"),
+        mileageDistance: z.number().finite().optional().describe("Mileage traveled distance (only effective for records of mileage-type tasks)"),
       },
       annotations: {
         destructiveHint: false,
@@ -145,11 +147,19 @@ JSON.stringify({ total: ids.length, returned: records.length, records: records }
         const props = params.note !== undefined
           ? `with properties {note:"${sanitize(params.note)}"}`
           : "";
+        const recordTarget = params.subtaskId !== undefined
+          ? `repeat with sub in subtasks of tsk
+          if id of sub is "${sanitize(params.subtaskId)}" then
+            return (make new taskRecord at end of taskRecords of sub ${props})
+          end if
+        end repeat
+        error "Subtask not found: ${sanitize(params.subtaskId)}"`
+          : `return (make new taskRecord at end of taskRecords of tsk ${props})`;
         const createScript = `tell application "Tyme"
   repeat with proj in projects
     repeat with tsk in tasks of proj
       if id of tsk is "${sanitize(params.taskId)}" then
-        return (make new taskRecord at end of taskRecords of tsk ${props})
+        ${recordTarget}
       end if
     end repeat
   end repeat
@@ -169,13 +179,15 @@ if (!app.getrecordwithid("${sanitize(newId)}")) {
 const rec = app.lastfetchedtaskrecord;
 rec.timestart = new Date("${timeStart.toISOString()}");
 rec.timeend = new Date("${timeEnd.toISOString()}");
+${params.mileageDistance !== undefined ? `rec.mileagetraveleddistance = ${params.mileageDistance};` : ""}
 `;
         try {
           await execJXA(dateScript, RECORD_TIMEOUT);
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
+          const setting = params.mileageDistance !== undefined ? "properties" : "dates";
           return formatError(
-            new Error(`Record created with id ${newId}, but setting dates failed: ${message}`),
+            new Error(`Record created with id ${newId}, but setting ${setting} failed: ${message}`),
           );
         }
         return formatSuccess(JSON.stringify({ id: newId }));
@@ -196,6 +208,7 @@ rec.timeend = new Date("${timeEnd.toISOString()}");
         note: z.string().optional().describe("New note"),
         billed: z.boolean().optional().describe("Mark as billed"),
         paid: z.boolean().optional().describe("Mark as paid"),
+        mileageDistance: z.number().finite().optional().describe("New mileage traveled distance (only effective for records of mileage-type tasks)"),
       },
       annotations: {
         destructiveHint: false,
@@ -218,6 +231,9 @@ rec.timeend = new Date("${timeEnd.toISOString()}");
         if (params.note !== undefined) updates.push(`rec.note = "${sanitize(params.note)}";`);
         if (params.billed !== undefined) updates.push(`rec.billed = ${params.billed};`);
         if (params.paid !== undefined) updates.push(`rec.paid = ${params.paid};`);
+        if (params.mileageDistance !== undefined) {
+          updates.push(`rec.mileagetraveleddistance = ${params.mileageDistance};`);
+        }
 
         if (updates.length === 0) {
           return formatSuccess("No fields to update");

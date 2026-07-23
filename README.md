@@ -5,17 +5,18 @@ An MCP (Model Context Protocol) server that connects AI assistants to [Tyme](htt
 ## Features
 
 - **Timer control** — Start, stop, and check running timers
-- **Project & task management** — List, create, update, and delete projects and tasks
+- **Category, project, task & subtask management** — List, create, update, and delete Tyme objects (projects and tasks also support detailed lookup)
 - **Time record search** — Query records by date range, project, task, type, and more
+- **Mileage tracking** — Configure per-kilometer rates and record traveled distance
 - **Reports** — Daily summaries and date-range reports grouped by project
 - **Native macOS integration** — Communicates directly with Tyme via AppleScript/JXA. No API keys, no cloud dependency, works offline
-- **22 tools** covering the full Tyme workflow
+- **29 tools** covering the full Tyme workflow
 
 ## Requirements
 
 - macOS
 - [Tyme 3](https://www.tyme-app.com/) installed and running
-- [Bun](https://bun.sh/) runtime
+- [Bun](https://bun.sh/) runtime — Bun is required because the package runs TypeScript directly. Use `bunx tyme-mcp`; `npx tyme-mcp` is not supported.
 
 ## Setup
 
@@ -61,11 +62,13 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 }
 ```
 
-### 4. Launch Tyme
+### 3. Launch Tyme
 
 Make sure Tyme is running before using the MCP server. The server communicates with Tyme through macOS scripting, so Tyme must be open.
 
 ## Tools
+
+Date-only inputs are interpreted in the server's local timezone. For date ranges, `endDate` is inclusive through the end of the specified day.
 
 ### Timer Operations
 
@@ -81,6 +84,7 @@ Make sure Tyme is running before using the MCP server. The server communicates w
 |------|-------------|
 | `list_categories` | List all categories |
 | `list_projects` | List projects (optionally filtered by category) |
+| `get_project_detail` | Get detailed project information |
 | `list_tasks` | List tasks in a project |
 | `list_subtasks` | List subtasks of a task |
 | `get_task_detail` | Get detailed task information |
@@ -92,12 +96,18 @@ Make sure Tyme is running before using the MCP server. The server communicates w
 
 | Tool | Description |
 |------|-------------|
+| `create_category` | Create a new category |
+| `update_category` | Update a category |
+| `delete_category` | Delete a category |
 | `create_project` | Create a new project |
 | `update_project` | Update project properties |
 | `delete_project` | Delete a project |
 | `create_task` | Create a new task |
 | `update_task` | Update task properties |
 | `delete_task` | Delete a task |
+| `create_subtask` | Create a new subtask |
+| `update_subtask` | Update subtask properties |
+| `delete_subtask` | Delete a subtask |
 | `create_record` | Create a time record |
 | `update_record` | Update a time record |
 | `delete_record` | Delete a time record |
@@ -127,7 +137,7 @@ AI Assistant → MCP Protocol → tyme-mcp → osascript (AppleScript/JXA) → T
 
 The server uses two scripting approaches:
 - **JXA (JavaScript for Automation)** for read operations — returns structured JSON
-- **AppleScript** for write operations — reliable object creation and manipulation
+- **AppleScript** for object creation/deletion, **JXA** for property updates
 
 All user inputs are sanitized before interpolation into scripts to prevent injection.
 
@@ -139,6 +149,16 @@ bun run src/index.ts
 
 # Watch mode
 bun run dev
+
+# Type-check the TypeScript source (CI gate)
+bun run typecheck
+
+# Run unit tests (Tyme is not required)
+bun test
+
+# Run the E2E smoke suite (requires Tyme running locally)
+# Test data is cleaned up automatically, including after failures.
+bun run smoke
 ```
 
 ## Tech Stack

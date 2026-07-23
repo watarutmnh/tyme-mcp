@@ -18,12 +18,13 @@ src/
   index.ts          — Server bootstrap, tool registration
   applescript.ts    — execAppleScript(), execJXA(), sanitize(), formatSuccess(), formatError()
   dates.ts          — parseDateInput(): local-timezone date parsing + calendar validation
+  refs.ts           — parseIdFromRef(): ID extraction from make-new reference strings
   tools/
     timer.ts        — start_timer, stop_timer, get_running_timers
-    categories.ts   — list_categories
-    projects.ts     — list/create/update/delete project
+    categories.ts   — list/create/update/delete category
+    projects.ts     — list/detail/create/update/delete project
     tasks.ts        — list/detail/selected/create/update/delete task
-    subtasks.ts     — list_subtasks
+    subtasks.ts     — list/create/update/delete subtask
     records.ts      — search/detail/create/update/delete record
     reports.ts      — daily/range summary
 ```
