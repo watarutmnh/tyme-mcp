@@ -2,15 +2,22 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { execAppleScript, execJXA, sanitize, formatSuccess, formatError } from "../applescript.ts";
 import { parseDateInput } from "../dates.ts";
+import { parseIdFromRef } from "../refs.ts";
 
 const DELETE_TIMEOUT = 30_000;
 
 export function registerTaskTools(server: McpServer) {
-  server.tool(
+  server.registerTool(
     "list_tasks",
-    "List all tasks in a project",
     {
-      projectId: z.string().describe("Project ID"),
+      description: "List all tasks in a project",
+      inputSchema: {
+        projectId: z.string().describe("Project ID"),
+      },
+      annotations: {
+        readOnlyHint: true,
+        openWorldHint: false,
+      },
     },
     async ({ projectId }) => {
       const script = `
@@ -38,11 +45,17 @@ JSON.stringify(tasks.map(t => ({
     },
   );
 
-  server.tool(
+  server.registerTool(
     "get_task_detail",
-    "Get detailed information about a specific task",
     {
-      taskId: z.string().describe("Task ID"),
+      description: "Get detailed information about a specific task",
+      inputSchema: {
+        taskId: z.string().describe("Task ID"),
+      },
+      annotations: {
+        readOnlyHint: true,
+        openWorldHint: false,
+      },
     },
     async ({ taskId }) => {
       const script = `
@@ -73,10 +86,16 @@ JSON.stringify({
     },
   );
 
-  server.tool(
+  server.registerTool(
     "get_selected_object",
-    "Get the currently selected item in the Tyme UI",
-    {},
+    {
+      description: "Get the currently selected item in the Tyme UI",
+      inputSchema: {},
+      annotations: {
+        readOnlyHint: true,
+        openWorldHint: false,
+      },
+    },
     async () => {
       const script = `
 const app = Application("Tyme");
@@ -94,18 +113,25 @@ JSON.stringify({
     },
   );
 
-  server.tool(
+  server.registerTool(
     "create_task",
-    "Create a new task in a project. Note: startDate cannot be set via Tyme's scripting API (read-only in practice).",
     {
-      projectId: z.string().describe("Project ID"),
-      name: z.string().describe("Task name"),
-      taskType: z.enum(["timed", "mileage", "fixed"]).optional().default("timed").describe("Task type (default: timed)"),
-      hourlyRate: z.number().finite().optional().describe("Hourly rate"),
-      plannedDuration: z.number().finite().optional().describe("Planned duration in seconds"),
-      dueDate: z.string().optional().describe("Due date (ISO 8601)"),
-      roundingMethod: z.number().finite().min(0).max(2).optional().describe("0=down, 1=nearest, 2=up"),
-      roundingMinutes: z.number().finite().optional().describe("Rounding minutes"),
+      description: "Create a new task in a project. Note: startDate cannot be set via Tyme's scripting API (read-only in practice).",
+      inputSchema: {
+        projectId: z.string().describe("Project ID"),
+        name: z.string().describe("Task name"),
+        taskType: z.enum(["timed", "mileage", "fixed"]).optional().default("timed").describe("Task type (default: timed)"),
+        hourlyRate: z.number().finite().optional().describe("Hourly rate"),
+        plannedDuration: z.number().finite().optional().describe("Planned duration in seconds"),
+        dueDate: z.string().optional().describe("Due date (ISO 8601)"),
+        roundingMethod: z.number().finite().min(0).max(2).optional().describe("0=down, 1=nearest, 2=up"),
+        roundingMinutes: z.number().finite().optional().describe("Rounding minutes"),
+      },
+      annotations: {
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
     },
     async (params) => {
       try {
@@ -127,10 +153,7 @@ JSON.stringify({
 end tell`;
         const ref = await execAppleScript(script);
         // Parse ID from "task id <UUID> of project id <UUID>"
-        const newId = ref.match(/task id ([^\s]+)/)?.[1];
-        if (!newId) {
-          throw new Error(`Failed to parse task ID from: ${ref}`);
-        }
+        const newId = parseIdFromRef(ref, "task");
 
         if (dueDate) {
           const dateScript = `
@@ -156,16 +179,23 @@ t.duedate = new Date("${dueDate.toISOString()}");
     },
   );
 
-  server.tool(
+  server.registerTool(
     "update_task",
-    "Update an existing task. Note: startDate cannot be set via Tyme's scripting API (read-only in practice).",
     {
-      taskId: z.string().describe("Task ID to update"),
-      name: z.string().optional().describe("New task name"),
-      completed: z.boolean().optional().describe("Mark as completed"),
-      hourlyRate: z.number().finite().optional().describe("New hourly rate"),
-      plannedDuration: z.number().finite().optional().describe("New planned duration in seconds"),
-      dueDate: z.string().optional().describe("New due date (ISO 8601)"),
+      description: "Update an existing task. Note: startDate cannot be set via Tyme's scripting API (read-only in practice).",
+      inputSchema: {
+        taskId: z.string().describe("Task ID to update"),
+        name: z.string().optional().describe("New task name"),
+        completed: z.boolean().optional().describe("Mark as completed"),
+        hourlyRate: z.number().finite().optional().describe("New hourly rate"),
+        plannedDuration: z.number().finite().optional().describe("New planned duration in seconds"),
+        dueDate: z.string().optional().describe("New due date (ISO 8601)"),
+      },
+      annotations: {
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     async (params) => {
       try {
@@ -199,11 +229,17 @@ JSON.stringify({ updated: true });
     },
   );
 
-  server.tool(
+  server.registerTool(
     "delete_task",
-    "Delete a task from Tyme",
     {
-      taskId: z.string().describe("Task ID to delete"),
+      description: "Delete a task from Tyme",
+      inputSchema: {
+        taskId: z.string().describe("Task ID to delete"),
+      },
+      annotations: {
+        destructiveHint: true,
+        openWorldHint: false,
+      },
     },
     async ({ taskId }) => {
       const safeId = sanitize(taskId);

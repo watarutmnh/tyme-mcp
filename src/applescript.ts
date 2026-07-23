@@ -1,5 +1,18 @@
 const DEFAULT_TIMEOUT = 10_000;
 
+// Tyme's lastFetchedTaskRecord and fetchedTaskRecordIDs are app-global state
+// and race across concurrent osascript processes. Serial execution is acceptable
+// for a single-user local app.
+// Known limitation: if an osascript process survives SIGKILL (kernel hang),
+// its exec() never settles and the whole queue wedges until server restart.
+let chain: Promise<unknown> = Promise.resolve();
+
+function withLock<T>(fn: () => Promise<T>): Promise<T> {
+  const run = chain.then(fn, fn);
+  chain = run.then(() => undefined, () => undefined);
+  return run;
+}
+
 export class TymeAppleScriptError extends Error {
   constructor(
     message: string,
@@ -36,9 +49,13 @@ async function exec(
   });
 
   let timedOut = false;
+  let killTimer: ReturnType<typeof setTimeout> | undefined;
   const timer = setTimeout(() => {
     timedOut = true;
     proc.kill();
+    killTimer = setTimeout(() => {
+      proc.kill("SIGKILL");
+    }, 2_000);
   }, timeout);
 
   try {
@@ -58,7 +75,10 @@ async function exec(
       const msg = stderr.trim();
       if (
         msg.includes("not running") ||
-        msg.includes("Connection is invalid")
+        msg.includes("Connection is invalid") ||
+        // osascript puts the real error code at the very end of stderr;
+        // anchoring avoids false positives on "(-600)" inside echoed user input
+        /\(-6(00|09)\)$/.test(msg)
       ) {
         throw new TymeAppleScriptError(
           "Tyme is not running. Please launch Tyme first.",
@@ -76,6 +96,9 @@ async function exec(
     return stdout.trim();
   } finally {
     clearTimeout(timer);
+    if (killTimer !== undefined) {
+      clearTimeout(killTimer);
+    }
   }
 }
 
@@ -83,14 +106,14 @@ export async function execAppleScript(
   script: string,
   timeout = DEFAULT_TIMEOUT,
 ): Promise<string> {
-  return exec(["-e", script], timeout);
+  return withLock(() => exec(["-e", script], timeout));
 }
 
 export async function execJXA(
   script: string,
   timeout = DEFAULT_TIMEOUT,
 ): Promise<string> {
-  return exec(["-l", "JavaScript", "-e", script], timeout);
+  return withLock(() => exec(["-l", "JavaScript", "-e", script], timeout));
 }
 
 export type McpToolResult = {

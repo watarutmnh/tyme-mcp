@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import packageJson from "../package.json";
 import { registerTimerTools } from "./tools/timer.ts";
 import { registerCategoryTools } from "./tools/categories.ts";
 import { registerProjectTools } from "./tools/projects.ts";
@@ -11,7 +12,9 @@ import { registerReportTools } from "./tools/reports.ts";
 
 const server = new McpServer({
   name: "tyme-mcp",
-  version: "0.1.0",
+  version: packageJson.version,
+}, {
+  instructions: "Controls the Tyme time-tracking app on macOS via AppleScript/JXA; Tyme must be running on the same machine. Most tools take IDs — discover them with list_categories, list_projects, list_tasks, list_subtasks, or get_task_records. Date-only date inputs are interpreted in the server's local timezone; range endDate is inclusive (end of day).",
 });
 
 registerTimerTools(server);

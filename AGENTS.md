@@ -78,6 +78,9 @@ All tool handlers use `formatSuccess()` and `formatError()` from `applescript.ts
 bun install          # Install dependencies
 bun run start        # Start MCP server
 bun run dev          # Start with watch mode
+bun run typecheck    # tsc --noEmit (CI gate)
+bun test             # Unit tests (no Tyme required)
+bun run smoke        # E2E smoke test against real Tyme (local only, creates+removes MCP-TEST data)
 ```
 
 ## Git Conventions

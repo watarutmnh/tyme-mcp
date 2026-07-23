@@ -2,10 +2,16 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { execJXA, formatSuccess, formatError } from "../applescript.ts";
 
 export function registerCategoryTools(server: McpServer) {
-  server.tool(
+  server.registerTool(
     "list_categories",
-    "List all categories in Tyme",
-    {},
+    {
+      description: "List all categories in Tyme",
+      inputSchema: {},
+      annotations: {
+        readOnlyHint: true,
+        openWorldHint: false,
+      },
+    },
     async () => {
       const script = `
 const app = Application("Tyme");
