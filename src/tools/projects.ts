@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { execAppleScript, execJXA, sanitize, formatSuccess, formatError } from "../applescript.ts";
+import { parseDateInput } from "../dates.ts";
 
 export function registerProjectTools(server: McpServer) {
   server.tool(
@@ -49,23 +50,47 @@ JSON.stringify(result);
       roundingMinutes: z.number().finite().optional().describe("Rounding minutes"),
     },
     async (params) => {
-      // Use AppleScript make new — returns "project id <UUID>"
-      const props = [`name:"${sanitize(params.name)}"`];
-      if (params.categoryId) props.push(`categoryID:"${sanitize(params.categoryId)}"`);
-      if (params.hourlyRate !== undefined) props.push(`defaultHourlyRate:${params.hourlyRate}`);
-      if (params.plannedBudget !== undefined) props.push(`plannedBudget:${params.plannedBudget}`);
-      if (params.plannedDuration !== undefined) props.push(`plannedDuration:${params.plannedDuration}`);
-      if (params.roundingMethod !== undefined) props.push(`roundingMethod:${params.roundingMethod}`);
-      if (params.roundingMinutes !== undefined) props.push(`roundingMinutes:${params.roundingMinutes}`);
+      try {
+        const dueDate = params.dueDate !== undefined
+          ? parseDateInput(params.dueDate)
+          : undefined;
 
-      const script = `tell application "Tyme"
+        // Use AppleScript make new — returns "project id <UUID>"
+        const props = [`name:"${sanitize(params.name)}"`];
+        if (params.categoryId) props.push(`categoryID:"${sanitize(params.categoryId)}"`);
+        if (params.hourlyRate !== undefined) props.push(`defaultHourlyRate:${params.hourlyRate}`);
+        if (params.plannedBudget !== undefined) props.push(`plannedBudget:${params.plannedBudget}`);
+        if (params.plannedDuration !== undefined) props.push(`plannedDuration:${params.plannedDuration}`);
+        if (params.roundingMethod !== undefined) props.push(`roundingMethod:${params.roundingMethod}`);
+        if (params.roundingMinutes !== undefined) props.push(`roundingMinutes:${params.roundingMinutes}`);
+
+        const script = `tell application "Tyme"
   set newProject to (make new project with properties {${props.join(", ")}})
 end tell`;
-      try {
         const ref = await execAppleScript(script);
         // Parse ID from "project id <UUID>"
-        const match = ref.match(/project id ([^\s]+)/);
-        const newId = match ? match[1] : ref;
+        const newId = ref.match(/project id ([^\s]+)/)?.[1];
+        if (!newId) {
+          throw new Error(`Failed to parse project ID from: ${ref}`);
+        }
+
+        if (dueDate) {
+          const dateScript = `
+const app = Application("Tyme");
+const proj = app.projects().find(p => p.id() === "${sanitize(newId)}");
+if (!proj) throw new Error("Project not found after creation");
+proj.duedate = new Date("${dueDate.toISOString()}");
+`;
+          try {
+            await execJXA(dateScript);
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            return formatError(
+              new Error(`Project created with id ${newId}, but setting dueDate failed: ${message}`),
+            );
+          }
+        }
+
         return formatSuccess(JSON.stringify({ id: newId, name: params.name }));
       } catch (error) {
         return formatError(error);
@@ -86,27 +111,30 @@ end tell`;
       plannedDuration: z.number().finite().optional().describe("New planned duration in seconds"),
     },
     async (params) => {
-      // Use JXA for updates to handle date parameters correctly
-      const updates: string[] = [];
-      if (params.name !== undefined) updates.push(`proj.name = "${sanitize(params.name)}";`);
-      if (params.completed !== undefined) updates.push(`proj.completed = ${params.completed};`);
-      if (params.hourlyRate !== undefined) updates.push(`proj.defaulthourlyrate = ${params.hourlyRate};`);
-      if (params.dueDate) updates.push(`proj.duedate = new Date("${sanitize(params.dueDate)}");`);
-      if (params.plannedBudget !== undefined) updates.push(`proj.plannedbudget = ${params.plannedBudget};`);
-      if (params.plannedDuration !== undefined) updates.push(`proj.plannedduration = ${params.plannedDuration};`);
+      try {
+        // Use JXA for updates to handle date parameters correctly
+        const updates: string[] = [];
+        if (params.name !== undefined) updates.push(`proj.name = "${sanitize(params.name)}";`);
+        if (params.completed !== undefined) updates.push(`proj.completed = ${params.completed};`);
+        if (params.hourlyRate !== undefined) updates.push(`proj.defaulthourlyrate = ${params.hourlyRate};`);
+        if (params.dueDate !== undefined) {
+          const dueDate = parseDateInput(params.dueDate);
+          updates.push(`proj.duedate = new Date("${dueDate.toISOString()}");`);
+        }
+        if (params.plannedBudget !== undefined) updates.push(`proj.plannedbudget = ${params.plannedBudget};`);
+        if (params.plannedDuration !== undefined) updates.push(`proj.plannedduration = ${params.plannedDuration};`);
 
-      if (updates.length === 0) {
-        return formatSuccess("No fields to update");
-      }
+        if (updates.length === 0) {
+          return formatSuccess("No fields to update");
+        }
 
-      const script = `
+        const script = `
 const app = Application("Tyme");
 const proj = app.projects().find(p => p.id() === "${sanitize(params.projectId)}");
-if (!proj) throw new Error("Project not found");
+if (!proj) throw new Error("Project not found: ${sanitize(params.projectId)}");
 ${updates.join("\n")}
 JSON.stringify({ updated: true });
 `;
-      try {
         await execJXA(script);
         return formatSuccess(`Project ${params.projectId} updated`);
       } catch (error) {
@@ -122,12 +150,21 @@ JSON.stringify({ updated: true });
       projectId: z.string().describe("Project ID to delete"),
     },
     async ({ projectId }) => {
+      const safeId = sanitize(projectId);
       const script = `tell application "Tyme"
-  delete (first project whose id is "${sanitize(projectId)}")
-  return "ok"
+  -- count check needed: Tyme's whose silently succeeds on non-matching IDs
+  set found to (projects whose id is "${safeId}")
+  if (count of found) > 0 then
+    delete (first item of found)
+    return "ok"
+  end if
+  return "not found"
 end tell`;
       try {
-        await execAppleScript(script);
+        const result = await execAppleScript(script);
+        if (result === "not found") {
+          return formatError(`Project ${projectId} not found`);
+        }
         return formatSuccess(`Project ${projectId} deleted`);
       } catch (error) {
         return formatError(error);

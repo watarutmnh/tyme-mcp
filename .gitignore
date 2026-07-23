@@ -36,3 +36,6 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 # Local agent config (not tracked)
 *.local.md
 .claude/settings.local.json
+
+# Local plans and handoffs (not tracked)
+.private/

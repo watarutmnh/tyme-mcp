@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { execAppleScript, execJXA, sanitize, formatSuccess, formatError } from "../applescript.ts";
+import { parseDateInput } from "../dates.ts";
 
 const DELETE_TIMEOUT = 30_000;
 
@@ -95,36 +96,59 @@ JSON.stringify({
 
   server.tool(
     "create_task",
-    "Create a new task in a project",
+    "Create a new task in a project. Note: startDate cannot be set via Tyme's scripting API (read-only in practice).",
     {
       projectId: z.string().describe("Project ID"),
       name: z.string().describe("Task name"),
       taskType: z.enum(["timed", "mileage", "fixed"]).optional().default("timed").describe("Task type (default: timed)"),
       hourlyRate: z.number().finite().optional().describe("Hourly rate"),
       plannedDuration: z.number().finite().optional().describe("Planned duration in seconds"),
-      startDate: z.string().optional().describe("Start date (ISO 8601)"),
       dueDate: z.string().optional().describe("Due date (ISO 8601)"),
       roundingMethod: z.number().finite().min(0).max(2).optional().describe("0=down, 1=nearest, 2=up"),
       roundingMinutes: z.number().finite().optional().describe("Rounding minutes"),
     },
     async (params) => {
-      // Use AppleScript make new — returns "task id <UUID> of project id <UUID>"
-      const props = [`name:"${sanitize(params.name)}"`];
-      if (params.taskType) props.push(`taskType:"${sanitize(params.taskType)}"`);
-      if (params.hourlyRate !== undefined) props.push(`timedHourlyRate:${params.hourlyRate}`);
-      if (params.plannedDuration !== undefined) props.push(`timedPlannedDuration:${params.plannedDuration}`);
-      if (params.roundingMethod !== undefined) props.push(`timedRoundingMethod:${params.roundingMethod}`);
-      if (params.roundingMinutes !== undefined) props.push(`timedRoundingMinutes:${params.roundingMinutes}`);
+      try {
+        const dueDate = params.dueDate !== undefined
+          ? parseDateInput(params.dueDate)
+          : undefined;
 
-      const script = `tell application "Tyme"
+        // Use AppleScript make new — returns "task id <UUID> of project id <UUID>"
+        const props = [`name:"${sanitize(params.name)}"`];
+        if (params.taskType) props.push(`taskType:"${sanitize(params.taskType)}"`);
+        if (params.hourlyRate !== undefined) props.push(`timedHourlyRate:${params.hourlyRate}`);
+        if (params.plannedDuration !== undefined) props.push(`timedPlannedDuration:${params.plannedDuration}`);
+        if (params.roundingMethod !== undefined) props.push(`timedRoundingMethod:${params.roundingMethod}`);
+        if (params.roundingMinutes !== undefined) props.push(`timedRoundingMinutes:${params.roundingMinutes}`);
+
+        const script = `tell application "Tyme"
   set proj to first project whose id is "${sanitize(params.projectId)}"
   set newTask to (make new task at end of tasks of proj with properties {${props.join(", ")}})
 end tell`;
-      try {
         const ref = await execAppleScript(script);
         // Parse ID from "task id <UUID> of project id <UUID>"
-        const match = ref.match(/task id ([^\s]+)/);
-        const newId = match ? match[1] : ref;
+        const newId = ref.match(/task id ([^\s]+)/)?.[1];
+        if (!newId) {
+          throw new Error(`Failed to parse task ID from: ${ref}`);
+        }
+
+        if (dueDate) {
+          const dateScript = `
+const app = Application("Tyme");
+const t = app.gettaskwithid("${sanitize(newId)}");
+if (!t) throw new Error("Task not found after creation");
+t.duedate = new Date("${dueDate.toISOString()}");
+`;
+          try {
+            await execJXA(dateScript);
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            return formatError(
+              new Error(`Task created with id ${newId}, but setting dueDate failed: ${message}`),
+            );
+          }
+        }
+
         return formatSuccess(JSON.stringify({ id: newId, name: params.name }));
       } catch (error) {
         return formatError(error);
@@ -134,37 +158,39 @@ end tell`;
 
   server.tool(
     "update_task",
-    "Update an existing task",
+    "Update an existing task. Note: startDate cannot be set via Tyme's scripting API (read-only in practice).",
     {
       taskId: z.string().describe("Task ID to update"),
       name: z.string().optional().describe("New task name"),
       completed: z.boolean().optional().describe("Mark as completed"),
       hourlyRate: z.number().finite().optional().describe("New hourly rate"),
       plannedDuration: z.number().finite().optional().describe("New planned duration in seconds"),
-      startDate: z.string().optional().describe("New start date (ISO 8601)"),
       dueDate: z.string().optional().describe("New due date (ISO 8601)"),
     },
     async (params) => {
-      // Use JXA for updates to handle date parameters correctly
-      const updates: string[] = [];
-      if (params.name !== undefined) updates.push(`tsk.name = "${sanitize(params.name)}";`);
-      if (params.completed !== undefined) updates.push(`tsk.completed = ${params.completed};`);
-      if (params.hourlyRate !== undefined) updates.push(`tsk.timedhourlyrate = ${params.hourlyRate};`);
-      if (params.plannedDuration !== undefined) updates.push(`tsk.timedplannedduration = ${params.plannedDuration};`);
-      if (params.startDate) updates.push(`tsk.startdate = new Date("${sanitize(params.startDate)}");`);
-      if (params.dueDate) updates.push(`tsk.duedate = new Date("${sanitize(params.dueDate)}");`);
+      try {
+        // Use JXA for updates to handle date parameters correctly
+        const updates: string[] = [];
+        if (params.name !== undefined) updates.push(`tsk.name = "${sanitize(params.name)}";`);
+        if (params.completed !== undefined) updates.push(`tsk.completed = ${params.completed};`);
+        if (params.hourlyRate !== undefined) updates.push(`tsk.timedhourlyrate = ${params.hourlyRate};`);
+        if (params.plannedDuration !== undefined) updates.push(`tsk.timedplannedduration = ${params.plannedDuration};`);
+        if (params.dueDate !== undefined) {
+          const dueDate = parseDateInput(params.dueDate);
+          updates.push(`tsk.duedate = new Date("${dueDate.toISOString()}");`);
+        }
 
-      if (updates.length === 0) {
-        return formatSuccess("No fields to update");
-      }
+        if (updates.length === 0) {
+          return formatSuccess("No fields to update");
+        }
 
-      const script = `
+        const script = `
 const app = Application("Tyme");
 const tsk = app.gettaskwithid("${sanitize(params.taskId)}");
+if (!tsk) throw new Error("Task not found: ${sanitize(params.taskId)}");
 ${updates.join("\n")}
 JSON.stringify({ updated: true });
 `;
-      try {
         await execJXA(script);
         return formatSuccess(`Task ${params.taskId} updated`);
       } catch (error) {

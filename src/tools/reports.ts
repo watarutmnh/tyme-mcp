@@ -1,29 +1,32 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { execJXA, sanitize, formatSuccess, formatError } from "../applescript.ts";
+import { parseDateInput } from "../dates.ts";
 
 const REPORT_TIMEOUT = 30_000;
 
 export function registerReportTools(server: McpServer) {
   server.tool(
     "get_daily_summary",
-    "Get a summary of work done on a specific day",
+    "Get a summary of work done on a specific day. The date is interpreted in the server's local timezone.",
     {
-      date: z.string().describe("Date to summarize (ISO 8601, e.g. 2026-03-25)"),
+      date: z.string().describe("Date to summarize (date-only, e.g. 2026-03-25)"),
     },
     async ({ date }) => {
-      const script = `
+      try {
+        const start = parseDateInput(date, { dateOnly: true });
+        const end = parseDateInput(date, { dateOnly: true, endOfDay: true });
+        const script = `
 const app = Application("Tyme");
-const d = new Date("${sanitize(date)}");
-const start = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0);
-const end = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59);
+const start = new Date("${start.toISOString()}");
+const end = new Date("${end.toISOString()}");
 app.gettaskrecordids({ startdate: start, enddate: end });
 const ids = app.fetchedtaskrecordids();
 const entries = [];
 let totalDuration = 0;
 let totalCosts = 0;
 for (let i = 0; i < ids.length; i++) {
-  app.getrecordwithid(ids[i]);
+  if (!app.getrecordwithid(ids[i])) continue;
   const r = app.lastfetchedtaskrecord;
   const duration = r.timedduration();
   const costs = r.costs();
@@ -48,7 +51,6 @@ JSON.stringify({
   entries: entries,
 });
 `;
-      try {
         const result = await execJXA(script, REPORT_TIMEOUT);
         return formatSuccess(result);
       } catch (error) {
@@ -59,7 +61,7 @@ JSON.stringify({
 
   server.tool(
     "get_range_summary",
-    "Get a summary of work done over a date range, grouped by project",
+    "Get a summary of work done over a date range, grouped by project. Date-only values are interpreted in the server's local timezone; endDate is inclusive (end of day).",
     {
       startDate: z.string().describe("Start date (ISO 8601)"),
       endDate: z.string().describe("End date (ISO 8601)"),
@@ -67,10 +69,13 @@ JSON.stringify({
       categoryId: z.string().optional().describe("Filter by category ID"),
     },
     async (params) => {
-      const script = `
+      try {
+        const start = parseDateInput(params.startDate);
+        const end = parseDateInput(params.endDate, { endOfDay: true });
+        const script = `
 const app = Application("Tyme");
-const start = new Date("${sanitize(params.startDate)}");
-const end = new Date("${sanitize(params.endDate)}");
+const start = new Date("${start.toISOString()}");
+const end = new Date("${end.toISOString()}");
 app.gettaskrecordids({
   startdate: start,
   enddate: end,
@@ -82,7 +87,7 @@ const projectMap = {};
 let totalDuration = 0;
 let totalCosts = 0;
 for (let i = 0; i < ids.length; i++) {
-  app.getrecordwithid(ids[i]);
+  if (!app.getrecordwithid(ids[i])) continue;
   const r = app.lastfetchedtaskrecord;
   const duration = r.timedduration();
   const costs = r.costs();
@@ -109,7 +114,6 @@ JSON.stringify({
   projects: Object.values(projectMap),
 });
 `;
-      try {
         const result = await execJXA(script, REPORT_TIMEOUT);
         return formatSuccess(result);
       } catch (error) {
