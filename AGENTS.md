@@ -17,6 +17,7 @@ MCP server connecting AI assistants to [Tyme](https://www.tyme-app.com/) (macOS 
 src/
   index.ts          — Server bootstrap, tool registration
   applescript.ts    — execAppleScript(), execJXA(), sanitize(), formatSuccess(), formatError()
+  dates.ts          — parseDateInput(): local-timezone date parsing + calendar validation
   tools/
     timer.ts        — start_timer, stop_timer, get_running_timers
     categories.ts   — list_categories
@@ -41,6 +42,12 @@ AppleScript commands keep original casing: `StartTrackerForTaskID`, `StopTracker
 ### Security
 
 All user inputs MUST pass through `sanitize()` before interpolation into scripts. This prevents AppleScript/JXA injection via quotes, newlines, and control characters.
+
+### Date Handling
+
+Date inputs MUST go through `parseDateInput()` (src/dates.ts) and be embedded into scripts via `toISOString()` — never interpolate raw date strings. Rationale: `new Date("YYYY-MM-DD")` parses as UTC midnight while `new Date("YYYY-MM-DDT00:00:00")` parses as local time, and JS silently rolls over invalid calendar dates (Feb 30 → Mar 2). `parseDateInput` normalizes date-only values to local time, validates calendar dates, and supports `endOfDay` for inclusive range ends.
+
+Note: `task.startDate` is declared `rw` in the sdef but is NOT writable in practice (AppleScript errors with -10006, JXA silently no-ops) — do not expose it as a settable parameter.
 
 ### Read vs Write Pattern
 
