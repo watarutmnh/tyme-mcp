@@ -2,13 +2,20 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { execAppleScript, execJXA, sanitize, formatSuccess, formatError } from "../applescript.ts";
 import { parseDateInput } from "../dates.ts";
+import { parseIdFromRef } from "../refs.ts";
 
 export function registerProjectTools(server: McpServer) {
-  server.tool(
+  server.registerTool(
     "list_projects",
-    "List all projects in Tyme, optionally filtered by category",
     {
-      categoryId: z.string().optional().describe("Filter by category ID"),
+      description: "List all projects in Tyme, optionally filtered by category",
+      inputSchema: {
+        categoryId: z.string().optional().describe("Filter by category ID"),
+      },
+      annotations: {
+        readOnlyHint: true,
+        openWorldHint: false,
+      },
     },
     async ({ categoryId }) => {
       const script = `
@@ -36,18 +43,25 @@ JSON.stringify(result);
     },
   );
 
-  server.tool(
+  server.registerTool(
     "create_project",
-    "Create a new project in Tyme",
     {
-      name: z.string().describe("Project name"),
-      categoryId: z.string().optional().describe("Category ID to assign"),
-      hourlyRate: z.number().finite().optional().describe("Default hourly rate"),
-      dueDate: z.string().optional().describe("Due date (ISO 8601)"),
-      plannedBudget: z.number().finite().optional().describe("Planned budget"),
-      plannedDuration: z.number().finite().optional().describe("Planned duration in seconds"),
-      roundingMethod: z.number().finite().min(0).max(2).optional().describe("0=down, 1=nearest, 2=up"),
-      roundingMinutes: z.number().finite().optional().describe("Rounding minutes"),
+      description: "Create a new project in Tyme",
+      inputSchema: {
+        name: z.string().describe("Project name"),
+        categoryId: z.string().optional().describe("Category ID to assign"),
+        hourlyRate: z.number().finite().optional().describe("Default hourly rate"),
+        dueDate: z.string().optional().describe("Due date (ISO 8601)"),
+        plannedBudget: z.number().finite().optional().describe("Planned budget"),
+        plannedDuration: z.number().finite().optional().describe("Planned duration in seconds"),
+        roundingMethod: z.number().finite().min(0).max(2).optional().describe("0=down, 1=nearest, 2=up"),
+        roundingMinutes: z.number().finite().optional().describe("Rounding minutes"),
+      },
+      annotations: {
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
     },
     async (params) => {
       try {
@@ -69,10 +83,7 @@ JSON.stringify(result);
 end tell`;
         const ref = await execAppleScript(script);
         // Parse ID from "project id <UUID>"
-        const newId = ref.match(/project id ([^\s]+)/)?.[1];
-        if (!newId) {
-          throw new Error(`Failed to parse project ID from: ${ref}`);
-        }
+        const newId = parseIdFromRef(ref, "project");
 
         if (dueDate) {
           const dateScript = `
@@ -98,17 +109,24 @@ proj.duedate = new Date("${dueDate.toISOString()}");
     },
   );
 
-  server.tool(
+  server.registerTool(
     "update_project",
-    "Update an existing project in Tyme",
     {
-      projectId: z.string().describe("Project ID to update"),
-      name: z.string().optional().describe("New project name"),
-      completed: z.boolean().optional().describe("Mark as completed"),
-      hourlyRate: z.number().finite().optional().describe("New hourly rate"),
-      dueDate: z.string().optional().describe("New due date (ISO 8601)"),
-      plannedBudget: z.number().finite().optional().describe("New planned budget"),
-      plannedDuration: z.number().finite().optional().describe("New planned duration in seconds"),
+      description: "Update an existing project in Tyme",
+      inputSchema: {
+        projectId: z.string().describe("Project ID to update"),
+        name: z.string().optional().describe("New project name"),
+        completed: z.boolean().optional().describe("Mark as completed"),
+        hourlyRate: z.number().finite().optional().describe("New hourly rate"),
+        dueDate: z.string().optional().describe("New due date (ISO 8601)"),
+        plannedBudget: z.number().finite().optional().describe("New planned budget"),
+        plannedDuration: z.number().finite().optional().describe("New planned duration in seconds"),
+      },
+      annotations: {
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     async (params) => {
       try {
@@ -143,11 +161,17 @@ JSON.stringify({ updated: true });
     },
   );
 
-  server.tool(
+  server.registerTool(
     "delete_project",
-    "Delete a project from Tyme",
     {
-      projectId: z.string().describe("Project ID to delete"),
+      description: "Delete a project from Tyme",
+      inputSchema: {
+        projectId: z.string().describe("Project ID to delete"),
+      },
+      annotations: {
+        destructiveHint: true,
+        openWorldHint: false,
+      },
     },
     async ({ projectId }) => {
       const safeId = sanitize(projectId);

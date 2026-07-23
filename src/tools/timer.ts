@@ -3,10 +3,19 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { execJXA, sanitize, formatSuccess, formatError } from "../applescript.ts";
 
 export function registerTimerTools(server: McpServer) {
-  server.tool(
+  server.registerTool(
     "start_timer",
-    "Start a timer for the specified task in Tyme",
-    { taskId: z.string().describe("The task ID to start tracking") },
+    {
+      description: "Start a timer for the specified task in Tyme",
+      inputSchema: {
+        taskId: z.string().describe("The task ID to start tracking"),
+      },
+      annotations: {
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
     async ({ taskId }) => {
       // StartTrackerForTaskID returns true even when a timer is already
       // running for the task, so check trackedtaskids() first to
@@ -43,10 +52,19 @@ JSON.stringify(out);
     },
   );
 
-  server.tool(
+  server.registerTool(
     "stop_timer",
-    "Stop a timer for the specified task in Tyme",
-    { taskId: z.string().describe("The task ID to stop tracking") },
+    {
+      description: "Stop a timer for the specified task in Tyme",
+      inputSchema: {
+        taskId: z.string().describe("The task ID to stop tracking"),
+      },
+      annotations: {
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
     async ({ taskId }) => {
       // StopTrackerForTaskID returns true even when no timer is running
       // for the task, so check trackedtaskids() first to distinguish
@@ -83,10 +101,16 @@ JSON.stringify(out);
     },
   );
 
-  server.tool(
+  server.registerTool(
     "get_running_timers",
-    "List all currently running timers in Tyme with task and project details",
-    {},
+    {
+      description: "List all currently running timers in Tyme with task and project details",
+      inputSchema: {},
+      annotations: {
+        readOnlyHint: true,
+        openWorldHint: false,
+      },
+    },
     async () => {
       const script = `
 const app = Application("Tyme");
@@ -98,8 +122,8 @@ for (let i = 0; i < taskIDs.length; i++) {
   results.push({
     taskId: taskIDs[i],
     recordId: recordIDs[i] || null,
-    taskName: task.name(),
-    projectId: task.relatedprojectid(),
+    taskName: task ? task.name() : "Unknown",
+    projectId: task ? task.relatedprojectid() : null,
   });
 }
 JSON.stringify(results);

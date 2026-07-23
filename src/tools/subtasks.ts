@@ -3,11 +3,17 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { execJXA, sanitize, formatSuccess, formatError } from "../applescript.ts";
 
 export function registerSubtaskTools(server: McpServer) {
-  server.tool(
+  server.registerTool(
     "list_subtasks",
-    "List all subtasks of a task",
     {
-      taskId: z.string().describe("Task ID"),
+      description: "List all subtasks of a task",
+      inputSchema: {
+        taskId: z.string().describe("Task ID"),
+      },
+      annotations: {
+        readOnlyHint: true,
+        openWorldHint: false,
+      },
     },
     async ({ taskId }) => {
       const script = `

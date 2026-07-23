@@ -2,8 +2,30 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { execAppleScript, execJXA, sanitize, formatSuccess, formatError } from "../applescript.ts";
 import { parseDateInput } from "../dates.ts";
+import { parseIdFromRef } from "../refs.ts";
 
 const RECORD_TIMEOUT = 30_000;
+
+function recordJsonSnippet(varName: string): string {
+  return `({
+  id: ${varName}.id(),
+  recordType: ${varName}.recordtype(),
+  timeStart: ${varName}.timestart().toISOString(),
+  timeEnd: ${varName}.timeend().toISOString(),
+  duration: ${varName}.timedduration(),
+  costs: ${varName}.costs(),
+  note: ${varName}.note(),
+  billed: ${varName}.billed(),
+  paid: ${varName}.paid(),
+  taskId: ${varName}.relatedtaskid(),
+  projectId: ${varName}.relatedprojectid(),
+  categoryId: ${varName}.relatedcategoryid(),
+  subtaskId: ${varName}.relatedsubtaskid(),
+  userEmail: ${varName}.useremail(),
+  mileageTraveledDistance: ${varName}.mileagetraveleddistance(),
+  mileageTraveledDuration: ${varName}.mileagetraveledduration(),
+})`;
+}
 
 function buildRecordFetchJXA(recordId: string): string {
   return `
@@ -12,40 +34,30 @@ if (!app.getrecordwithid("${sanitize(recordId)}")) {
   throw new Error("Record not found: ${sanitize(recordId)}");
 }
 const r = app.lastfetchedtaskrecord;
-JSON.stringify({
-  id: r.id(),
-  recordType: r.recordtype(),
-  timeStart: r.timestart().toISOString(),
-  timeEnd: r.timeend().toISOString(),
-  duration: r.timedduration(),
-  costs: r.costs(),
-  note: r.note(),
-  billed: r.billed(),
-  paid: r.paid(),
-  taskId: r.relatedtaskid(),
-  projectId: r.relatedprojectid(),
-  categoryId: r.relatedcategoryid(),
-  subtaskId: r.relatedsubtaskid(),
-  userEmail: r.useremail(),
-  mileageTraveledDistance: r.mileagetraveleddistance(),
-});
+JSON.stringify(${recordJsonSnippet("r")});
 `;
 }
 
 export function registerRecordTools(server: McpServer) {
-  server.tool(
+  server.registerTool(
     "get_task_records",
-    "Search time records in Tyme by date range and optional filters. Date-only values are interpreted in the server's local timezone; endDate is inclusive (end of day). Uses N+1 fetch pattern internally — use limit to control performance.",
     {
-      startDate: z.string().describe("Start date (ISO 8601, e.g. 2026-03-01). Date-only values are interpreted in the server's local timezone."),
-      endDate: z.string().describe("End date (ISO 8601, e.g. 2026-03-31). Date-only values are interpreted in the server's local timezone and are inclusive (end of day)."),
-      projectId: z.string().optional().describe("Filter by project ID"),
-      taskId: z.string().optional().describe("Filter by task ID"),
-      categoryId: z.string().optional().describe("Filter by category ID"),
-      type: z.enum(["timed", "mileage", "fixed"]).optional().describe("Filter by record type"),
-      onlyBillable: z.boolean().optional().describe("Only return billable records"),
-      userEmail: z.string().optional().describe("Filter by user email"),
-      limit: z.number().finite().optional().default(100).describe("Max records to return (default: 100)"),
+      description: "Search time records in Tyme by date range and optional filters. Date-only values are interpreted in the server's local timezone; endDate is inclusive (end of day). Uses N+1 fetch pattern internally — use limit to control performance.",
+      inputSchema: {
+        startDate: z.string().describe("Start date (ISO 8601, e.g. 2026-03-01). Date-only values are interpreted in the server's local timezone."),
+        endDate: z.string().describe("End date (ISO 8601, e.g. 2026-03-31). Date-only values are interpreted in the server's local timezone and are inclusive (end of day)."),
+        projectId: z.string().optional().describe("Filter by project ID"),
+        taskId: z.string().optional().describe("Filter by task ID"),
+        categoryId: z.string().optional().describe("Filter by category ID"),
+        type: z.enum(["timed", "mileage", "fixed"]).optional().describe("Filter by record type"),
+        onlyBillable: z.boolean().optional().describe("Only return billable records"),
+        userEmail: z.string().optional().describe("Filter by user email"),
+        limit: z.number().finite().optional().default(100).describe("Max records to return (default: 100)"),
+      },
+      annotations: {
+        readOnlyHint: true,
+        openWorldHint: false,
+      },
     },
     async (params) => {
       try {
@@ -73,22 +85,7 @@ const records = [];
 for (let i = 0; i < Math.min(ids.length, limit); i++) {
   if (!app.getrecordwithid(ids[i])) continue;
   const r = app.lastfetchedtaskrecord;
-  records.push({
-    id: r.id(),
-    recordType: r.recordtype(),
-    timeStart: r.timestart().toISOString(),
-    timeEnd: r.timeend().toISOString(),
-    duration: r.timedduration(),
-    costs: r.costs(),
-    note: r.note(),
-    billed: r.billed(),
-    paid: r.paid(),
-    taskId: r.relatedtaskid(),
-    projectId: r.relatedprojectid(),
-    categoryId: r.relatedcategoryid(),
-    subtaskId: r.relatedsubtaskid(),
-    userEmail: r.useremail(),
-  });
+  records.push(${recordJsonSnippet("r")});
 }
 JSON.stringify({ total: ids.length, returned: records.length, records: records });
 `;
@@ -100,11 +97,17 @@ JSON.stringify({ total: ids.length, returned: records.length, records: records }
     },
   );
 
-  server.tool(
+  server.registerTool(
     "get_record_detail",
-    "Get detailed information about a specific time record",
     {
-      recordId: z.string().describe("Record ID"),
+      description: "Get detailed information about a specific time record",
+      inputSchema: {
+        recordId: z.string().describe("Record ID"),
+      },
+      annotations: {
+        readOnlyHint: true,
+        openWorldHint: false,
+      },
     },
     async ({ recordId }) => {
       try {
@@ -116,14 +119,21 @@ JSON.stringify({ total: ids.length, returned: records.length, records: records }
     },
   );
 
-  server.tool(
+  server.registerTool(
     "create_record",
-    "Create a new time record for a task",
     {
-      taskId: z.string().describe("Task ID to add the record to"),
-      timeStart: z.string().describe("Start time (ISO 8601)"),
-      timeEnd: z.string().describe("End time (ISO 8601)"),
-      note: z.string().optional().describe("Note for the record"),
+      description: "Create a new time record for a task",
+      inputSchema: {
+        taskId: z.string().describe("Task ID to add the record to"),
+        timeStart: z.string().describe("Start time (ISO 8601)"),
+        timeEnd: z.string().describe("End time (ISO 8601)"),
+        note: z.string().optional().describe("Note for the record"),
+      },
+      annotations: {
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
     },
     async (params) => {
       try {
@@ -148,10 +158,7 @@ end tell`;
 
         const ref = await execAppleScript(createScript, RECORD_TIMEOUT);
         // Parse ID from "taskRecord id <UUID> of task id <UUID> of project id <UUID>"
-        const newId = ref.match(/taskRecord id ([^\s]+)/)?.[1];
-        if (!newId) {
-          throw new Error(`Failed to parse record ID from: ${ref}`);
-        }
+        const newId = parseIdFromRef(ref, "taskRecord");
 
         // Step 2: JXA to set dates (same pattern as update_record)
         const dateScript = `
@@ -178,16 +185,23 @@ rec.timeend = new Date("${timeEnd.toISOString()}");
     },
   );
 
-  server.tool(
+  server.registerTool(
     "update_record",
-    "Update an existing time record",
     {
-      recordId: z.string().describe("Record ID to update"),
-      timeStart: z.string().optional().describe("New start time (ISO 8601)"),
-      timeEnd: z.string().optional().describe("New end time (ISO 8601)"),
-      note: z.string().optional().describe("New note"),
-      billed: z.boolean().optional().describe("Mark as billed"),
-      paid: z.boolean().optional().describe("Mark as paid"),
+      description: "Update an existing time record",
+      inputSchema: {
+        recordId: z.string().describe("Record ID to update"),
+        timeStart: z.string().optional().describe("New start time (ISO 8601)"),
+        timeEnd: z.string().optional().describe("New end time (ISO 8601)"),
+        note: z.string().optional().describe("New note"),
+        billed: z.boolean().optional().describe("Mark as billed"),
+        paid: z.boolean().optional().describe("Mark as paid"),
+      },
+      annotations: {
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     async (params) => {
       try {
@@ -226,11 +240,17 @@ JSON.stringify({ updated: true });
     },
   );
 
-  server.tool(
+  server.registerTool(
     "delete_record",
-    "Delete a time record from Tyme",
     {
-      recordId: z.string().describe("Record ID to delete"),
+      description: "Delete a time record from Tyme",
+      inputSchema: {
+        recordId: z.string().describe("Record ID to delete"),
+      },
+      annotations: {
+        destructiveHint: true,
+        openWorldHint: false,
+      },
     },
     async ({ recordId }) => {
       const safeId = sanitize(recordId);
