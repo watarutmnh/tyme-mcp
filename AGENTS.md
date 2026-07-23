@@ -95,5 +95,7 @@ bun run smoke        # E2E smoke test against real Tyme (local only, creates+rem
 Published to npm as `tyme-mcp`. Users install via `bunx tyme-mcp`.
 
 - `bin` field in `package.json` points to `src/index.ts` (with `#!/usr/bin/env bun` shebang)
-- `files` field limits published contents to `src/`
-- Bump `version` in `package.json` before `npm publish --access public`
+- `files` field limits published contents to `src/` and `CHANGELOG.md`
+- Release flow: update `CHANGELOG.md` (move Unreleased entries into a new
+  version section), bump `version` in `package.json`, merge, then push a
+  `v*` tag — GitHub Actions publishes to npm with provenance
