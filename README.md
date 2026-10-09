@@ -1,5 +1,9 @@
 # tyme-mcp
 
+> **This project is no longer maintained.**
+> Tyme 2026.9 and later ships with an official MCP server built in (Tyme → Settings → AI & MCP). If you are on Tyme 2026.9 or later, please use the official server instead.
+> This package remains available for older versions of Tyme, but it will not receive further updates.
+
 An MCP (Model Context Protocol) server that connects AI assistants to [Tyme](https://www.tyme-app.com/), the macOS time tracking app. Control timers, manage projects and tasks, search time records, and generate reports — all through natural language.
 
 ## Features
